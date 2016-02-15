@@ -481,15 +481,29 @@ public class FileSystemConnector extends WritableConnector implements Pageable {
         return fileFor(id).exists();
     }
 
+    /**
+     * Hook for processing other node types (not resources or regular files)
+     * @param id
+     * @param file
+     * @param isRoot
+     * @return true if node is recognized and processed; false causes fallback
+     * to processing as a directory.
+     */
+    protected DocumentWriter otherType(String id, File file, boolean isRoot, boolean isResource) {
+        return null;
+    }
+
     @Override
     public Document getDocumentById( String id ) {
         File file = fileFor(id);
-        if (isExcluded(file) || !file.exists()) return null;
+        if (isExcluded(file) || !acceptFile(file)) return null;
         boolean isRoot = isRoot(id);
         boolean isResource = isContentNode(id);
         DocumentWriter writer = null;
         File parentFile = file.getParentFile();
-        if (isResource) {
+        if ((writer = otherType(id, file, isRoot, isResource)) != null) {
+            // node configuration initialized by otherType method
+        } else if (isResource) {
             writer = newDocument(id);
             BinaryValue binaryValue = binaryFor(file);
             writer.setPrimaryType(NT_RESOURCE);
@@ -580,6 +594,10 @@ public class FileSystemConnector extends WritableConnector implements Pageable {
         return isRoot ? JCR_CONTENT_SUFFIX : fileId + JCR_CONTENT_SUFFIX;
     }
 
+    protected boolean acceptFile(File file) {
+        return file.exists() && file.canRead() && (file.isFile() || file.isDirectory());
+    }
+
     private DocumentWriter newFolderWriter( String id,
                                             File file,
                                             int offset ) {
@@ -596,7 +614,7 @@ public class FileSystemConnector extends WritableConnector implements Pageable {
             File child = children[i];
             // Only include as a child if we can access and read the file. Permissions might prevent us from
             // reading the file, and the file might not exist if it is a broken symlink (see MODE-1768 for details).
-            if (child.exists() && child.canRead() && (child.isFile() || child.isDirectory())) {
+            if (acceptFile(child)) {
                 // we need to count the total accessible children
                 totalChildren++;
                 // only add a child if it's in the current page
